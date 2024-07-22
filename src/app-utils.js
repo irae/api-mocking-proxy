@@ -1,6 +1,7 @@
 import {parse} from 'url';
-import querystring from 'querystring';
+import querystring from 'qs';
 import {join} from 'path';
+import {createHash} from "crypto";
 
 // Utility methods
 function stripSpecialChars (val) {
@@ -94,12 +95,18 @@ export function resolveMockPath (req, dataRoot) {
     // Query string
     const props = getProps(req, req.conf.matchProps, req.conf.ignoreProps);
     if (props) {
-      path = join(path, props);
+      const cap = 120;
+      let cappedProps = props;
+      if (props.length > cap) {
+        const hash = sha(props);
+        cappedProps = hash + '-' + props.slice(0, cap);
+      }
+      path = join(path, cappedProps);
     }
   }
 
   path = join(dataRoot, path + '.mock');
-  console.log(path);
+  if(process.env.AMP_VERBOSE) console.log(path);
   return path;
 }
 
@@ -119,6 +126,12 @@ export function passthru (res, options) {
     console.warn('Error writing response', e);
     res.end();
   }
+}
+
+function sha(_) {
+  const shasum = createHash("sha1");
+  shasum.update(_);
+  return shasum.digest("hex");
 }
 
 export function errorHandler (res, err) {
