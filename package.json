@@ -1,6 +1,6 @@
 {
-  "name": "api-mocking-proxy",
-  "version": "1.1.0",
+  "name": "irae-api-mocking-proxy",
+  "version": "1.2.0",
   "description": "An (HTTP) API proxy server that stores and replays captured responses.",
   "author": "Colin Bate <colin@colinbate.com>",
   "contributors": [
@@ -20,10 +20,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/colinbate/api-mocking-proxy"
+    "url": "https://github.com/irae/api-mocking-proxy"
   },
   "bugs": {
-    "url": "https://github.com/colinbate/api-mocking-proxy/issues"
+    "url": "https://github.com/irae/api-mocking-proxy/issues"
   },
   "keywords": [
     "mock",
@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "axios": "^1.21.1",
-    "config": "^5.0.1",
+    "config": "^4.4.2",
     "ejs": "^7.0.2",
     "express": "^5.3.0",
     "minimist": "^1.2.8",
@@ -68,7 +68,7 @@
   },
   "analyze": true,
   "license": "MIT",
-  "homepage": "https://github.com/colinbate/api-mocking-proxy",
+  "homepage": "https://github.com/irae/api-mocking-proxy",
   "main": "lib/index.js",
   "directories": {
     "test": "test"

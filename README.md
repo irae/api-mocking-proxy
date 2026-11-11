@@ -16,10 +16,10 @@ There is no GUI to this tool. However, the captured responses are stored as plai
 
 ## Installation
 
-The recommended way to install AMP is to create a simple project and install AMP locally to it.
+AMP requires Node.js 22.20 or later and is tested on Node.js 22 and 26. The recommended way to install AMP is to create a simple project and install AMP locally to it.
 
 ```
-npm install api-mocking-proxy
+npm install irae-api-mocking-proxy
 ```
 
 You can set up a `package.json` with an easy way to start your app:

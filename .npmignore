@@ -4,4 +4,5 @@ data
 .babelrc
 .travis.yml
 .editorconfig
+eslint.config.js
 test
