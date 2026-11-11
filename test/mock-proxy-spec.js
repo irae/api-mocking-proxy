@@ -118,24 +118,29 @@ describe('mock-proxy', function () {
     assert.equal(res._getData(), 'redirected');
   });
 
-  it('keeps decompressed gzip text in the cache and recompresses it for replay', async function () {
-    const req = testUtils.mockRequest('mocks', '/gzip', { headers: { 'accept-encoding': 'gzip' } });
-    nock(req.conf.host).get('/gzip').reply(200, gzipSync('compressed response'), {
-      'content-encoding': 'gzip', 'content-type': 'text/plain'
-    });
-    const res = httpMocks.createResponse({ eventEmitter: require('node:events').EventEmitter });
-    const ended = new Promise(resolve => res.on('end', resolve));
-    await proxy()(req, res, () => assert.fail());
-    await ended;
-    assert.equal((await cacher.get(req)).body, 'compressed response');
-    assert.equal(gunzipSync(res._getBuffer()).toString(), 'compressed response');
+  for (const acceptEncoding of [undefined, 'gzip', 'gzip, deflate, br']) {
+    it(`decodes gzip once when recording and replaying with accept-encoding ${acceptEncoding}`, async function () {
+      const req = testUtils.mockRequest('mocks', '/gzip', {
+        headers: acceptEncoding ? { 'accept-encoding': acceptEncoding } : {}
+      });
+      nock(req.conf.host).get('/gzip').reply(200, gzipSync('compressed response'), {
+        'content-encoding': 'gzip', 'content-type': 'text/plain'
+      });
+      const res = httpMocks.createResponse({ eventEmitter: require('node:events').EventEmitter });
+      const ended = new Promise(resolve => res.on('end', resolve));
+      await proxy()(req, res, () => assert.fail());
+      await ended;
+      assert.equal((await cacher.get(req)).body, 'compressed response');
+      assert.equal(gunzipSync(res._getBuffer()).toString(), 'compressed response');
 
-    const replay = httpMocks.createResponse({ eventEmitter: require('node:events').EventEmitter });
-    const replayEnded = new Promise(resolve => replay.on('end', resolve));
-    await cache()(req, replay, () => assert.fail());
-    await replayEnded;
-    assert.equal(gunzipSync(replay._getBuffer()).toString(), 'compressed response');
-  });
+      const replay = httpMocks.createResponse({ eventEmitter: require('node:events').EventEmitter });
+      const replayEnded = new Promise(resolve => replay.on('end', resolve));
+      await cache()(req, replay, () => assert.fail());
+      await replayEnded;
+      assert.equal(replay.getHeader('content-encoding'), 'gzip');
+      assert.equal(gunzipSync(replay._getBuffer()).toString(), 'compressed response');
+    });
+  }
 
   it('does not proxy mappings with noproxy set', async function () {
     const req = testUtils.mockRequest('mocks', '/disabled', { conf: { noproxy: true } });

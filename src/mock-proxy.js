@@ -37,7 +37,7 @@ const middleware = () => async (req, res, next) => {
       validateStatus: () => true
     });
     let body = response.data;
-    if (headers['accept-encoding'] === 'gzip' && response.headers['content-encoding'] === 'gzip') {
+    if (response.headers['content-encoding'] === 'gzip') {
       body = await promisify(gunzip)(body);
     }
     const data = {
