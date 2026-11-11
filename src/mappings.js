@@ -1,5 +1,5 @@
 import config from 'config';
-import {shouldIgnore} from './app-utils';
+import { shouldIgnore } from './app-utils';
 
 const mappings = config.has('mappings') ? config.get('mappings') : {};
 
@@ -17,7 +17,7 @@ const middleware = () => (req, res, next) => {
   if (mappings.has(key)) {
     const mapping = mappings.get(key);
     const conf = {
-      key: key,
+      key,
       dir: mapping.dir || key,
       host: mapping.host,
       matchHeaders: mapping.matchHeaders || false,
@@ -34,7 +34,7 @@ const middleware = () => (req, res, next) => {
     return next();
   }
   console.log('WARN: No mapping found for ' + key);
-  res.writeHead(404, {'Content-Type': 'text/plain'});
+  res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.write('No proxy mapping found for this URL.');
   res.end();
 };

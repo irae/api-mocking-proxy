@@ -44,7 +44,7 @@ const parse = input => {
 };
 
 const stringify = input => {
-  let results = [];
+  const results = [];
   if (input.code) {
     results.push(input.code);
   }

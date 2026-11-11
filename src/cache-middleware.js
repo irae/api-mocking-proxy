@@ -1,20 +1,21 @@
 import cacher from './cacher';
-import {passthru, shouldIgnore} from './app-utils';
+import { passthru, shouldIgnore } from './app-utils';
 
-const middleware = () => (req, res, next) => {
+const middleware = () => async (req, res, next) => {
   if (shouldIgnore(req)) {
     return next();
   }
-  cacher.get(req).then((payload) => {
+  try {
+    const payload = await cacher.get(req);
     if (!payload) {
       // Not in cache, keep on moving.
       return next();
     }
     passthru(res, payload);
-  }).catch(err => {
+  } catch (err) {
     console.log('Cache error', err);
     next();
-  });
+  }
 };
 
 export default middleware;

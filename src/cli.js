@@ -4,7 +4,7 @@ import cacher from './cacher';
 import server from './serve';
 import config from 'config';
 
-const argv = minimist(process.argv.slice(2), {alias: {root: ['r', 'data']}});
+const argv = minimist(process.argv.slice(2), { alias: { root: ['r', 'data'] } });
 
 if (argv.root) {
   cacher.root = argv.root;

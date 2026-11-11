@@ -1,7 +1,6 @@
 import express from 'express';
 import favicon from 'serve-favicon';
-import {join} from 'path';
-import bodyParser from 'body-parser';
+import { join } from 'path';
 import logger from 'morgan';
 
 import mappings from './mappings';
@@ -10,13 +9,14 @@ import cache from './cache-middleware';
 import mockproxy from './mock-proxy';
 import delay from './delay-middleware';
 
-var appRoot = join(__dirname, '..');
+const appRoot = join(__dirname, '..');
 
 // Initialization
-var app = express();
+const app = express();
+app.set('query parser', 'extended');
 app.use(favicon(join(appRoot, 'public', 'favicon.ico')));
 app.use(logger('dev'));
-app.use(bodyParser.raw(mappings.bodyParserConfig));
+app.use(express.raw(mappings.bodyParserConfig));
 // Setup proxy middleware
 app.use(mappings());
 app.use(delay());
@@ -24,7 +24,7 @@ app.use(props());
 app.use(cache());
 app.use(mockproxy());
 
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(express.static(join(appRoot, 'public')));
 
 // View engine setup

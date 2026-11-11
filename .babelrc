@@ -1,3 +1,3 @@
 {
-  "presets": ["es2015-node-plus"]
+  "presets": [["@babel/preset-env", {"targets": {"node": "22.20"}, "modules": "commonjs"}]]
 }

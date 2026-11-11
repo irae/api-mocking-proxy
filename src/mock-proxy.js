@@ -1,35 +1,16 @@
-import request from 'request';
-import pify from 'pify';
+import axios from 'axios';
+import { gunzip } from 'node:zlib';
+import { promisify } from 'node:util';
 import { hasBody } from 'type-is';
 import config from 'config';
 import cacher from './cacher';
-import {passthru, errorHandler, shouldIgnore} from './app-utils';
+import { passthru, errorHandler, shouldIgnore } from './app-utils';
 
 const proxyConfig = config.has('proxy') ? config.get('proxy') : {};
 const timeout = proxyConfig.timeout || 5000;
 const disabled = !!proxyConfig.disable;
 
-// Add OPTIONS convenience wrapper
-request.options = (opts, callback) => {
-  opts.method = 'OPTIONS';
-  return request(opts, callback);
-};
-
-const requestp = pify(request, {multiArgs: true});
-
-const eh = (res) => (err) => errorHandler(res, err);
-
-const responseHandler = (req, res) => ([retRes, body]) => {
-  var data = {
-    code: retRes.statusCode,
-    headers: retRes.headers,
-    body: body
-  };
-
-  cacher.set(req, data).then(() => passthru(res, data), eh(res));
-};
-
-const middleware = () => (req, res, next) => {
+const middleware = () => async (req, res, next) => {
   if (shouldIgnore(req)) {
     return next();
   }
@@ -39,19 +20,36 @@ const middleware = () => (req, res, next) => {
     return;
   }
   const url = req.conf.host + req.urlToProxy;
-  const method = req.method.toLowerCase();
-  const urlConf = {url, timeout, headers: req.headers};
-  if (urlConf.headers['accept-encoding'] && urlConf.headers['accept-encoding'] === 'gzip') {
-    urlConf.gzip = true;
-  }
+  const headers = { 'accept-encoding': 'identity', ...req.headers };
   // Remove encoding because we've processed the body already.
-  delete urlConf.headers['content-encoding'];
+  delete headers['content-encoding'];
   // Reset host
-  delete urlConf.headers.host;
-  if (hasBody(req)) {
-    urlConf.body = req.body;
+  delete headers.host;
+  try {
+    const response = await axios({
+      url,
+      method: req.method,
+      timeout,
+      headers,
+      data: hasBody(req) ? req.body : undefined,
+      responseType: 'arraybuffer',
+      decompress: false,
+      validateStatus: () => true
+    });
+    let body = response.data;
+    if (headers['accept-encoding'] === 'gzip' && response.headers['content-encoding'] === 'gzip') {
+      body = await promisify(gunzip)(body);
+    }
+    const data = {
+      code: response.status,
+      headers: response.headers.toJSON(),
+      body: body.toString('utf8')
+    };
+    await cacher.set(req, data);
+    passthru(res, data);
+  } catch (err) {
+    errorHandler(res, err);
   }
-  requestp[method](urlConf).then(responseHandler(req, res));
 };
 
 export default middleware;

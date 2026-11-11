@@ -1,7 +1,6 @@
-import {parse} from 'url';
 import querystring from 'qs';
-import {join} from 'path';
-import {createHash} from "crypto";
+import { join } from 'path';
+import { createHash } from 'crypto';
 
 // Utility methods
 function stripSpecialChars (val) {
@@ -16,10 +15,9 @@ function getUrlPath (urlParts) {
 }
 
 function getProps (req, match, ignore) {
-  let qs;
   let pobj = {};
   if (Array.isArray(match)) {
-    for (let m of match) {
+    for (const m of match) {
       if (m in req.props) {
         pobj[m] = req.props[m];
       }
@@ -28,11 +26,11 @@ function getProps (req, match, ignore) {
     pobj = req.props;
   }
   if (Array.isArray(ignore)) {
-    for (let p of ignore) {
+    for (const p of ignore) {
       delete pobj[p];
     }
   }
-  qs = querystring.stringify(pobj);
+  const qs = querystring.stringify(pobj);
   return stripSpecialChars(qs);
 }
 
@@ -54,14 +52,14 @@ function getReqHeaders (req, match) {
       }
     }
   } else {
-    for (let key in req.headers) {
+    for (const key in req.headers) {
       headers = join(headers, stripSpecialChars(key + '/' + req.headers[key]));
     }
   }
   return headers;
 }
 
-export function shouldIgnore ({url}) {
+export function shouldIgnore ({ url }) {
   return url === '' || url === '/' || url.startsWith('/__');
 }
 
@@ -81,7 +79,7 @@ export function resolveMockPath (req, dataRoot) {
   }
 
   // Meta info regarding the request's url, including the query string
-  const parts = parse(req.urlToProxy, true);
+  const parts = { pathname: req.urlToProxy.split(/[?#]/, 1)[0] };
 
   if (parts) {
     // REST parameters
@@ -106,7 +104,7 @@ export function resolveMockPath (req, dataRoot) {
   }
 
   path = join(dataRoot, path + '.mock');
-  if(process.env.AMP_VERBOSE) console.log(path);
+  if (process.env.AMP_VERBOSE) console.log(path);
   return path;
 }
 
@@ -128,15 +126,15 @@ export function passthru (res, options) {
   }
 }
 
-function sha(_) {
-  const shasum = createHash("sha1");
+function sha (_) {
+  const shasum = createHash('sha1');
   shasum.update(_);
-  return shasum.digest("hex");
+  return shasum.digest('hex');
 }
 
 export function errorHandler (res, err) {
   console.error('Request failed: ' + err);
-  res.writeHead(500, {'Content-Type': 'text/plain'});
+  res.writeHead(500, { 'Content-Type': 'text/plain' });
   res.write('An error has occured, please review the logs.');
   res.end();
 }
