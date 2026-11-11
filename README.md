@@ -1,6 +1,6 @@
 # API Mocking Proxy (AMP)
 
-[![Build Status](https://travis-ci.org/colinbate/api-mocking-proxy.svg?branch=master)](https://travis-ci.org/colinbate/api-mocking-proxy)
+[![CI](https://github.com/irae/api-mocking-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/irae/api-mocking-proxy/actions/workflows/ci.yml)
 
 AMP intercepts HTTP requests and replays captured responses. Its main purpose is to support test automation and daily development work by removing depedencies on 3rd party APIs - typically, but not only, based on JSON or XML.
 
