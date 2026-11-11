@@ -1,20 +1,15 @@
-import mkdirp from 'mkdirp';
-import {writeFile, readFile, access, R_OK} from 'fs';
-import {dirname} from 'path';
-import pify from 'pify';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
-const writep = pify(writeFile);
-const readp = pify(readFile);
-const accessp = pify(access);
-const mkdirpp = pify(mkdirp);
-
-export function read (path) {
-  return accessp(path, R_OK)
-    .then(() => readp(path, {encoding: 'utf8'}))
-    .catch(() => 'false')
-    .then(input => input || 'false'); // Empty files are cache miss
+export async function read (path) {
+  try {
+    return await readFile(path, 'utf8') || 'false'; // Empty files are cache miss
+  } catch {
+    return 'false';
+  }
 }
 
-export function write (path, content) {
-  return mkdirpp(dirname(path)).then(() => writep(path, content, {encoding: 'utf8', flag: 'w'}));
+export async function write (path, content) {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, content, { encoding: 'utf8', flag: 'w' });
 }

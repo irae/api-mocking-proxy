@@ -2,6 +2,7 @@ src
 config
 data
 .babelrc
-.travis.yml
+.github
 .editorconfig
+eslint.config.js
 test

@@ -1,206 +1,183 @@
-/* eslint-env mocha */
-var assert = require('assert');
-var httpMocks = require('node-mocks-http');
-var nock = require('nock');
-var path = require('path');
-var rimraf = require('rimraf');
-var testUtils = require('./test-utils')();
-var proxy = require('../lib/mock-proxy');
-var cacher = require('../lib/cacher');
-var docRoot = __dirname;
-
-var mappings = {
-  'mocks': {
-    'dir': 'mocks',
-    'host': 'http://www.example.com'
-  },
-  'mock-proxy-temp': {
-    'dir': 'mock-proxy-temp',
-    'host': 'http://www.anotherexample.com'
-  }
-};
-proxy.init(docRoot, mappings);
-cacher.init(docRoot, mappings);
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+const { gzipSync, gunzipSync } = require('node:zlib');
+const httpMocks = require('node-mocks-http');
+const nock = require('nock').default;
+const testUtils = require('./test-utils')();
+const proxy = require('../lib/mock-proxy').default;
+const cache = require('../lib/cache-middleware').default;
+const cacher = require('../lib/cacher').default;
 
 describe('mock-proxy', function () {
-  describe('#execute()', function () {
-    var test = function (url, done, options) {
-      _test(false, url, done, options);
-    };
+  let root;
+  before(async function () {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'amp-proxy-'));
+    cacher.root = root;
+    nock.disableNetConnect();
+  });
+  afterEach(function () {
+    const pending = nock.pendingMocks();
+    nock.cleanAll();
+    assert.deepEqual(pending, []);
+  });
+  after(async function () {
+    nock.enableNetConnect();
+    await fs.rm(root, { recursive: true, force: true });
+  });
 
-    var testCached = function (url, done, options) {
-      _test(true, url, done, options);
-    };
+  const cases = [
+    ['/hello'],
+    ['/greeting/hello'],
+    ['/hello?a=b'],
+    ['/hello?a=b&c=d'],
+    ['/hello/a/b/c/d'],
+    ['/hello', { headers: { authorization: '12345' } }],
+    ['/hello', { headers: { authorization: '12345', 'access-control-allow-origin': 'http://www.example.com' } }],
+    ['/hello?a=b', { headers: { authorization: '12345' } }],
+    ['/hello/a/b/c/d', { headers: { authorization: '12345' } }],
+    ['/hello', { method: 'POST', body: { a: 'b', c: 'd' } }],
+    ['/hello', { method: 'POST', body: { a: 'b', c: 'd' }, headers: { authorization: '12345' } }],
+    ['/hello', {
+      method: 'POST',
+      body: { a: 'b', c: 'd' },
+      headers: { authorization: '12345', 'access-control-allow-origin': 'http://www.example.com' }
+    }],
+    ['/hello', { method: 'PUT', body: { a: 'b', c: 'd' } }],
+    ['/hello/a/b/c/d', { method: 'DELETE' }],
+    ['/hello', { method: 'PATCH', body: { a: 'b' } }],
+    ['/hello', { method: 'OPTIONS' }]
+  ];
 
-    var _test = function (cached, url, done, options) {
-      options = options || {};
-      var apiKey = cached ? 'mocks' : 'mock-proxy-temp';
-      var req = testUtils.mockRequest(apiKey, url, options);
-      var res = httpMocks.createResponse({encoding: 'utf8'});
-      var body = {msg: 'hello world'};
+  for (const [url, options = {}] of cases) {
+    describe((options.method || 'GET') + ' ' + url + ' ' + JSON.stringify(options), function () {
+      let data;
+      it('proxies the request and saves the response', async function () {
+        const req = testUtils.mockRequest('mocks', url, options);
+        const res = httpMocks.createResponse();
+        nock(req.conf.host)
+          .intercept(url, req.method, options.body ? req.body.toString() : undefined)
+          .reply(200, '{"msg":"hello world"}', { 'content-type': 'application/json' });
 
-      var mapping = mappings[apiKey];
-
-      // intercept calls to the fictional API and return an OK response
-      nock(mapping.host)
-        .get(url)
-        .reply(200, body)
-        .post(url)
-        .reply(200, body)
-        .put(url)
-        .reply(200, body)
-        .delete(url)
-        .reply(200, body);
-
-      proxy.execute(req, res).then(
-        function () {
-          var conf = testUtils.conf(apiKey, mapping);
-          var data = JSON.parse(cacher.get(conf, req));
-
-          // verify content type and data
-          assert.equal(res.statusCode, data.code);
-          assert.equal(res._getData(), data.body);
-
-          // check headers
-          var resHeaders = JSON.stringify(res._getHeaders());
-          var dataHeaders = JSON.stringify(data.headers);
-          assert.equal(resHeaders, dataHeaders);
-
-          done();
-        },
-        function (err) { throw err; }
-      );
-    };
-
-    after(function (done) {
-      rimraf(path.resolve(docRoot, 'mock-proxy-temp'), function (err) {
-        if (err) throw err;
-        done();
+        await proxy()(req, res, () => assert.fail('unexpected next'));
+        data = await cacher.get(req);
+        assert.equal(res.statusCode, 200);
+        assert.equal(data.body, '{"msg":"hello world"}');
+        assert.equal(res._getData(), data.body);
+        assert.equal(res.getHeader('content-type'), data.headers['content-type']);
+      });
+      it('replays the cached response without an upstream request', async function () {
+        const req = testUtils.mockRequest('mocks', url, options);
+        const res = httpMocks.createResponse();
+        await cache()(req, res, () => assert.fail('cache miss'));
+        assert.equal(res.statusCode, data.code);
+        assert.equal(res._getData(), data.body);
       });
     });
+  }
 
-    it('should be able to submit a plain GET request and save its response', function (done) {
-      test('/hello', done);
+  it('renders the home and error templates with the current EJS API', async function () {
+    const ejs = require('ejs');
+    const home = await ejs.renderFile(path.join(__dirname, '../views/index.ejs'), {
+      title: 'API Mocking Proxy Server', mappings: [{ key: 'mocks', host: 'http://127.0.0.1:4969' }]
     });
-
-    it('should be able to load a cached response of a plain GET request', function (done) {
-      testCached('/hello', done);
+    assert.match(home, /API Mocking Proxy Server/);
+    assert.match(home, /\/mocks\/\*/);
+    const error = await ejs.renderFile(path.join(__dirname, '../views/error.ejs'), {
+      message: 'Test error', error: { status: 500, stack: 'Test stack' }
     });
+    assert.match(error, /Test error/);
+  });
 
-    it('should be able to submit a GET request with a nested path and save its response', function (done) {
-      test('/greeting/hello', done);
-    });
+  it('handles HEAD responses with an empty body', async function () {
+    const req = testUtils.mockRequest('mocks', '/head', { method: 'HEAD' });
+    const res = httpMocks.createResponse();
+    nock(req.conf.host).head('/head').reply(200, '', { 'content-type': 'text/plain' });
+    await proxy()(req, res, () => assert.fail());
+    assert.equal(res.statusCode, 200);
+    assert.equal((await cacher.get(req)).body, '');
+  });
 
-    it('should be able to load a cached response of a GET request with a nested path', function (done) {
-      testCached('/greeting/hello', done);
-    });
+  it('passes through and caches non-success status codes', async function () {
+    const req = testUtils.mockRequest('mocks', '/missing');
+    const res = httpMocks.createResponse();
+    nock(req.conf.host).get('/missing').reply(404, 'not found');
+    await proxy()(req, res, () => assert.fail());
+    assert.equal(res.statusCode, 404);
+    assert.equal(res._getData(), 'not found');
+    assert.equal((await cacher.get(req)).code, 404);
+  });
 
-    it('should be able to submit a GET request with a query string and save its response', function (done) {
-      test('/hello?a=b', done);
-    });
+  it('follows upstream redirects', async function () {
+    const req = testUtils.mockRequest('mocks', '/redirect');
+    const res = httpMocks.createResponse();
+    nock(req.conf.host).get('/redirect').reply(302, '', { location: '/target' })
+      .get('/target').reply(200, 'redirected');
+    await proxy()(req, res, () => assert.fail());
+    assert.equal(res._getData(), 'redirected');
+  });
 
-    it('should be able to load a cached response of a GET request with a query string', function (done) {
-      testCached('/hello?a=b', done);
-    });
-
-    it('should be able to submit a GET request with a longer query string and save its response', function (done) {
-      test('/hello?a=b&c=d', done);
-    });
-
-    it('should be able to load a cached response of a GET request with a longer query string', function (done) {
-      testCached('/hello?a=b&c=d', done);
-    });
-
-    it('should be able to submit a RESTful GET request and save its response', function (done) {
-      test('/hello/a/b/c/d', done);
-    });
-
-    it('should be able to load a cached response of a RESTful GET request', function (done) {
-      testCached('/hello/a/b/c/d', done);
-    });
-
-    it('should be able to submit a plain GET request using a custom header and save its response', function (done) {
-      test('/hello', done, {headers: {'Authorization': 12345}});
-    });
-
-    it('should be able to load a cached response of a plain GET request using a custom header', function (done) {
-      testCached('/hello', done, {headers: {'Authorization': 12345}});
-    });
-
-    it('should be able to submit a plain GET request using custom headers and save its response', function (done) {
-      test('/hello', done, {
-        headers: {'Authorization': 12345, 'Access-Control-Allow-Origin': 'http://www.example.com'}});
-    });
-
-    it('should be able to load a cached response of a plain GET request using custom headers', function (done) {
-      testCached('/hello', done, {
-        headers: {'Authorization': 12345, 'Access-Control-Allow-Origin': 'http://www.example.com'}});
-    });
-
-    it('should be able to submit a GET request with a query string and using a custom header and save its response',
-      function (done) {
-        test('/hello?a=b', done, {headers: {'Authorization': 12345}});
+  for (const acceptEncoding of [undefined, 'gzip', 'gzip, deflate, br']) {
+    it(`decodes gzip once when recording and replaying with accept-encoding ${acceptEncoding}`, async function () {
+      const req = testUtils.mockRequest('mocks', '/gzip', {
+        headers: acceptEncoding ? { 'accept-encoding': acceptEncoding } : {}
       });
-
-    it('should be able to load a cached response of a GET request with a query string and using a custom header',
-      function (done) {
-        testCached('/hello?a=b', done, {headers: {'Authorization': 12345}});
+      nock(req.conf.host).get('/gzip').reply(200, gzipSync('compressed response'), {
+        'content-encoding': 'gzip', 'content-type': 'text/plain'
       });
+      const res = httpMocks.createResponse({ eventEmitter: require('node:events').EventEmitter });
+      const ended = new Promise(resolve => res.on('end', resolve));
+      await proxy()(req, res, () => assert.fail());
+      await ended;
+      assert.equal((await cacher.get(req)).body, 'compressed response');
+      assert.equal(gunzipSync(res._getBuffer()).toString(), 'compressed response');
 
-    it('should be able to submit a RESTful GET request using a custom header and save its response', function (done) {
-      test('/hello/a/b/c/d', done, {headers: {'Authorization': 12345}});
+      const replay = httpMocks.createResponse({ eventEmitter: require('node:events').EventEmitter });
+      const replayEnded = new Promise(resolve => replay.on('end', resolve));
+      await cache()(req, replay, () => assert.fail());
+      await replayEnded;
+      assert.equal(replay.getHeader('content-encoding'), 'gzip');
+      assert.equal(gunzipSync(replay._getBuffer()).toString(), 'compressed response');
     });
+  }
 
-    it('should be able to load a cached response of a RESTful GET request using a custom header', function (done) {
-      testCached('/hello/a/b/c/d', done, {headers: {'Authorization': 12345}});
+  it('does not proxy mappings with noproxy set', async function () {
+    const req = testUtils.mockRequest('mocks', '/disabled', { conf: { noproxy: true } });
+    const res = httpMocks.createResponse();
+    await proxy()(req, res, () => assert.fail());
+    assert.equal(res.statusCode, 204);
+    assert.equal(await cacher.get(req), false);
+  });
+
+  it('passes ignored requests to the next middleware', async function () {
+    for (const url of ['', '/', '/__health']) {
+      let called = false;
+      await proxy()({ url }, {}, () => { called = true; });
+      assert.equal(called, true);
+    }
+  });
+
+  it('reports network errors without an unhandled rejection or cache entry', async function () {
+    const req = testUtils.mockRequest('mocks', '/network-error');
+    const res = httpMocks.createResponse();
+    nock(req.conf.host).get('/network-error').replyWithError('connection reset');
+    await proxy()(req, res, () => assert.fail());
+    assert.equal(res.statusCode, 500);
+    assert.equal(await cacher.get(req), false);
+  });
+
+  it('forwards raw JSON request bodies and headers', async function () {
+    const req = testUtils.mockRequest('mocks', '/json', {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: 'test-token' }
     });
-
-    it('should be able to submit a url-encoded POST request and save its response', function (done) {
-      test('/hello', done, {method: 'POST', body: {a: 'b', c: 'd'}});
-    });
-
-    it('should be able to load a cached response of a url-encoded POST request', function (done) {
-      testCached('/hello', done, {method: 'POST', body: {a: 'b', c: 'd'}});
-    });
-
-    it('should be able to submit a url-encoded POST request using a custom header and save its response',
-      function (done) {
-        test('/hello', done, {method: 'POST', body: {a: 'b', c: 'd'}, headers: {'Authorization': 12345}});
-      });
-
-    it('should be able to load a cached response of a url-encoded POST request using a custom header',
-      function (done) {
-        testCached('/hello', done, {method: 'POST', body: {a: 'b', c: 'd'}, headers: {'Authorization': 12345}});
-      });
-
-    it('should be able to submit a url-encoded POST request using custom headers and save its response',
-      function (done) {
-        test('/hello', done, {method: 'POST',
-          body: {a: 'b', c: 'd'},
-          headers: {'Authorization': 12345, 'Access-Control-Allow-Origin': 'http://www.example.com'}});
-      });
-
-    it('should be able to load a cached response of a url-encoded POST request using custom headers',
-      function (done) {
-        testCached('/hello', done, {method: 'POST',
-          body: {a: 'b', c: 'd'},
-          headers: {'Authorization': 12345, 'Access-Control-Allow-Origin': 'http://www.example.com'}});
-      });
-
-    it('should be able to submit a PUT request and save its response', function (done) {
-      test('/hello', done, {method: 'PUT', body: {a: 'b', c: 'd'}});
-    });
-
-    it('should be able to load a cached response of a PUT request', function (done) {
-      testCached('/hello', done, {method: 'PUT', body: {a: 'b', c: 'd'}});
-    });
-
-    it('should be able to submit a DELETE request and save its response', function (done) {
-      test('/hello/a/b/c/d', done, {method: 'DELETE'});
-    });
-
-    it('should be able to load a cached response of a DELETE request', function (done) {
-      testCached('/hello/a/b/c/d', done, {method: 'DELETE'});
-    });
+    req.body = Buffer.from('{"hello":"world"}');
+    req.headers['content-length'] = req.body.length;
+    const res = httpMocks.createResponse();
+    nock(req.conf.host, { reqheaders: { authorization: 'test-token', 'content-type': 'application/json' } })
+      .post('/json', { hello: 'world' }).reply(201, 'created');
+    await proxy()(req, res, () => assert.fail());
+    assert.equal(res.statusCode, 201);
+    assert.equal(res._getData(), 'created');
   });
 });

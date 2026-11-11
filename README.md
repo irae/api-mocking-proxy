@@ -1,6 +1,6 @@
 # API Mocking Proxy (AMP)
 
-[![Build Status](https://travis-ci.org/colinbate/api-mocking-proxy.svg?branch=master)](https://travis-ci.org/colinbate/api-mocking-proxy)
+[![CI](https://github.com/irae/api-mocking-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/irae/api-mocking-proxy/actions/workflows/ci.yml)
 
 AMP intercepts HTTP requests and replays captured responses. Its main purpose is to support test automation and daily development work by removing depedencies on 3rd party APIs - typically, but not only, based on JSON or XML.
 
@@ -16,10 +16,10 @@ There is no GUI to this tool. However, the captured responses are stored as plai
 
 ## Installation
 
-The recommended way to install AMP is to create a simple project and install AMP locally to it.
+AMP requires Node.js 22.20 or later and is tested on Node.js 22 and 26. The recommended way to install AMP is to create a simple project and install AMP locally to it.
 
 ```
-npm install api-mocking-proxy
+npm install irae-api-mocking-proxy
 ```
 
 You can set up a `package.json` with an easy way to start your app:
